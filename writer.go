@@ -2,12 +2,10 @@ package multipart
 
 import (
 	"bytes"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
 	"net/textproto"
-	"sort"
 )
 
 type Writer struct {
@@ -16,13 +14,15 @@ type Writer struct {
 	partClosed []bool
 }
 
-func NewWriter(w io.Writer, headers textproto.MIMEHeader) (*Writer, error) {
+func NewWriter(w io.Writer) (*Writer, error) {
 	boundary := randomBoundary()
-	return NewWriterWithBoundary(w, headers, boundary)
+	return NewWriterWithBoundary(w, boundary)
 }
 
-func NewWriterWithBoundary(w io.Writer, headers textproto.MIMEHeader, boundary string) (*Writer, error) {
-	err := writerHeaders(w, headers, boundary)
+func NewWriterWithBoundary(w io.Writer, boundary string) (*Writer, error) {
+	headers := textproto.MIMEHeader{}
+	headers.Add("Content-Type", fmt.Sprintf("multipart/byteranges; boundary=%s", boundary))
+	err := writeHeaders(w, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -32,42 +32,6 @@ func NewWriterWithBoundary(w io.Writer, headers textproto.MIMEHeader, boundary s
 		boundary:   boundary,
 		partClosed: []bool{},
 	}, nil
-}
-
-func writerHeaders(w io.Writer, headers textproto.MIMEHeader, boundary string) error {
-	var buf bytes.Buffer
-
-	_, err := fmt.Fprintf(&buf, "Content-Type: multipart/byteranges; boundary=%s\r\n", boundary)
-	if err != nil {
-		return err
-	}
-
-	keys := make([]string, 0, len(headers))
-	for k := range headers {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		for _, v := range headers[k] {
-			_, err := fmt.Fprintf(&buf, "%s: %s\r\n", k, v)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// fmt.Fprintf(&buf, "\r\n")
-	_, err = io.Copy(w, &buf)
-	return err
-}
-
-func randomBoundary() string {
-	var buf [30]byte
-	_, err := io.ReadFull(rand.Reader, buf[:])
-	if err != nil {
-		panic(err)
-	}
-	return fmt.Sprintf("%x", buf[:])
 }
 
 func (w *Writer) SetBoundary(boundary string) {
