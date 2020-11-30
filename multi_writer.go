@@ -38,7 +38,7 @@ func (w *Writer) SetBoundary(boundary string) {
 	w.boundary = boundary
 }
 
-func (w *Writer) CreatePart(contentType string, rangeStart, rangeEnd, contentLength int64) error {
+func (w *Writer) CreatePart(contentType, rangeStart, rangeEnd, fileSize string) error {
 	if len(w.partClosed) != 0 {
 		w.partClosed[len(w.partClosed)-1] = true
 	}
@@ -48,7 +48,7 @@ func (w *Writer) CreatePart(contentType string, rangeStart, rangeEnd, contentLen
 	var newPart bytes.Buffer
 	fmt.Fprintf(&newPart, "\r\n--%s\r\n", w.boundary)
 	fmt.Fprintf(&newPart, "Content-Type: %s\r\n", contentType)
-	fmt.Fprintf(&newPart, "Content-Range: bytes %d-%d/%d\r\n", rangeStart, rangeEnd, contentLength)
+	fmt.Fprintf(&newPart, "Content-Range: bytes %s-%s/%s\r\n", rangeStart, rangeEnd, fileSize)
 	fmt.Fprintf(&newPart, "\r\n")
 
 	_, err := io.Copy(w.w, &newPart)

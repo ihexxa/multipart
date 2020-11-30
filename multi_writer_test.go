@@ -8,11 +8,11 @@ import (
 
 func TestWriter(t *testing.T) {
 	type Part struct {
-		contentType   string
-		rangeStart    int64
-		rangeEnd      int64
-		contentLength int64
-		content       string
+		contentType string
+		rangeStart  string
+		rangeEnd    string
+		fileSize    string
+		content     string
 	}
 	type TestCase struct {
 		parts       []*Part
@@ -24,8 +24,8 @@ func TestWriter(t *testing.T) {
 		testCases := []*TestCase{
 			&TestCase{
 				parts: []*Part{
-					&Part{"application/pdf", 500, 999, 8000, "...the first range..."},
-					&Part{"application/pdf", 7000, 7999, 8000, "...the second range"},
+					&Part{"application/pdf", "500", "999", "8000", "...the first range..."},
+					&Part{"application/pdf", "7000", "7999", "8000", "...the second range"},
 				},
 				expectedOut: "Content-Type: multipart/byteranges; boundary=THIS_STRING_SEPARATES\r\n\r\n--THIS_STRING_SEPARATES\r\nContent-Type: application/pdf\r\nContent-Range: bytes 500-999/8000\r\n\r\n...the first range...\r\n--THIS_STRING_SEPARATES\r\nContent-Type: application/pdf\r\nContent-Range: bytes 7000-7999/8000\r\n\r\n...the second range\r\n--THIS_STRING_SEPARATES--\r\n",
 			},
@@ -37,7 +37,7 @@ func TestWriter(t *testing.T) {
 
 			var err error
 			for _, part := range tc.parts {
-				err = w.CreatePart(part.contentType, part.rangeStart, part.rangeEnd, part.contentLength)
+				err = w.CreatePart(part.contentType, part.rangeStart, part.rangeEnd, part.fileSize)
 				if err != nil {
 					t.Fatal(err)
 				}
