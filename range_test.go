@@ -137,7 +137,7 @@ func TestRangeToParts(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			parts, err := RangeIntoParts(tc.rangeValue, tc.ctype, tc.fileSize)
+			parts, err := RangeToParts(tc.rangeValue, tc.ctype, tc.fileSize)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -182,7 +182,7 @@ func TestRangeToParts(t *testing.T) {
 		}
 
 		for i, tc := range testCases {
-			_, err := RangeIntoParts(tc.rangeValue, tc.ctype, tc.fileSize)
+			_, err := RangeToParts(tc.rangeValue, tc.ctype, tc.fileSize)
 			if err == nil {
 				t.Errorf("case %d should fail", i)
 			}

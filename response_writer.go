@@ -45,13 +45,10 @@ func WriteResponseWithBoundary(src io.ReadSeeker, dst io.WriteCloser, fileName s
 
 }
 
-// TODO: support reverse seek
 // TODO: Add header: Content-Length
 func writeSinglePart(src io.ReadSeeker, writer io.WriteCloser, fileName string, part *Part) error {
 	headers := textproto.MIMEHeader{}
-	// headers.Add("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
 	headers.Add("Content-Range", fmt.Sprintf("bytes %s-%s/%s", part.rangeStart, part.rangeEnd, part.fileSize))
-	headers.Add("Content-Type", "application/octet-stream")
 
 	err := writeHeaders(writer, headers)
 	if err != nil {
@@ -89,7 +86,7 @@ func writePartBody(src io.ReadSeeker, dst io.Writer, part *Part) error {
 		return err
 	}
 
-	rangeLen := part.rangeEndInt - part.rangeStartInt
+	rangeLen := part.rangeEndInt - part.rangeStartInt + 1
 	wrote, err := io.CopyN(dst, src, rangeLen)
 	if err != nil {
 		return err

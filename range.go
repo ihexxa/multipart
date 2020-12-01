@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func RangeIntoParts(rangeValue string, respContentType, respFileSize string) ([]*Part, error) {
+func RangeToParts(rangeValue string, respContentType, respFileSize string) ([]*Part, error) {
 	if rangeValue == "" {
 		return nil, nil // header not present
 	}
@@ -86,7 +86,7 @@ func checkParts(parts []*Part) error {
 				return fmt.Errorf("invalid range start %w", err)
 			} else if part.rangeStartInt < 0 ||
 				(part.fileSize != "*" && part.rangeStartInt >= part.fileSizeInt) ||
-				(part.rangeEnd != "" && part.rangeStartInt >= part.rangeEndInt) {
+				(part.rangeEnd != "" && part.rangeStartInt > part.rangeEndInt) {
 				return errors.New("invalid range start")
 			}
 		} else {
