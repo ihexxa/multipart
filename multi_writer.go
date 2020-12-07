@@ -2,74 +2,92 @@ package multipart
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
-	"net/textproto"
 )
 
 type Writer struct {
-	w          io.Writer
-	boundary   string
-	partClosed []bool
+	src      io.ReadSeeker
+	pr       *io.PipeReader
+	pw       *io.PipeWriter
+	boundary string
+	parts    []*Part
 }
 
-func NewWriter(w io.Writer) (*Writer, error) {
+func NewWriter(src io.ReadSeeker, parts []*Part) *Writer {
 	boundary := randomBoundary()
-	return NewWriterWithBoundary(w, boundary)
+	return NewWriterWithBoundary(src, parts, boundary)
 }
 
-func NewWriterWithBoundary(w io.Writer, boundary string) (*Writer, error) {
-	headers := textproto.MIMEHeader{}
-	headers.Add("Content-Type", fmt.Sprintf("multipart/byteranges; boundary=%s", boundary))
-	err := writeHeaders(w, headers)
-	if err != nil {
-		return nil, err
-	}
-
+func NewWriterWithBoundary(src io.ReadSeeker, parts []*Part, boundary string) *Writer {
+	pr, pw := io.Pipe()
 	return &Writer{
-		w:          w,
-		boundary:   boundary,
-		partClosed: []bool{},
-	}, nil
+		src:      src,
+		pr:       pr,
+		pw:       pw,
+		boundary: boundary,
+		parts:    parts,
+	}
+}
+
+func (w *Writer) ContentLength() int64 {
+	var buf bytes.Buffer
+	partsBodyLen := int64(0)
+
+	for _, part := range w.parts {
+		partsBodyLen += part.rangeEndInt - part.rangeStartInt + 1
+		w.WritePartHeader(&buf, part)
+	}
+	fmt.Fprintf(&buf, "\r\n--%s--", w.boundary)
+	partsHeaderLen := int64(buf.Len())
+
+	return partsHeaderLen + partsBodyLen - 2 // minus the first /r/n before the first boundary
 }
 
 func (w *Writer) SetBoundary(boundary string) {
 	w.boundary = boundary
 }
 
-func (w *Writer) CreatePart(contentType, rangeStart, rangeEnd, fileSize string) error {
-	if len(w.partClosed) != 0 {
-		w.partClosed[len(w.partClosed)-1] = true
+func (w *Writer) WritePartHeader(buf io.Writer, part *Part) error {
+	fmt.Fprintf(buf, "\r\n--%s\r\n", w.boundary)
+	fmt.Fprint(buf, "Content-Type: application/octet-stream\r\n")
+	fmt.Fprintf(buf, "Content-Range: bytes %s-%s/%s\r\n", part.rangeStart, part.rangeEnd, part.fileSize)
+	fmt.Fprint(buf, "\r\n")
+
+	return nil
+}
+
+func (w *Writer) WriteMultiParts() error {
+	var err error
+	for _, part := range w.parts {
+		if err = w.WritePartHeader(w.pw, part); err != nil {
+			return err
+		}
+		if err = writePartBody(w.src, w.pw, part); err != nil {
+			return err
+		}
 	}
 
-	w.partClosed = append(w.partClosed, false)
-
-	var newPart bytes.Buffer
-	fmt.Fprintf(&newPart, "\r\n--%s\r\n", w.boundary)
-	fmt.Fprintf(&newPart, "Content-Type: %s\r\n", contentType)
-	fmt.Fprintf(&newPart, "Content-Range: bytes %s-%s/%s\r\n", rangeStart, rangeEnd, fileSize)
-	fmt.Fprintf(&newPart, "\r\n")
-
-	_, err := io.Copy(w.w, &newPart)
-	return err
+	return nil
 }
 
 func (w *Writer) Write(bytes []byte) (n int, err error) {
-	if len(w.partClosed) == 0 {
-		return 0, errors.New("call CreatePart before Write")
-	} else if w.partClosed[len(w.partClosed)-1] {
-		return 0, errors.New("last part is closed")
-	}
-
-	return w.w.Write(bytes)
+	return w.pw.Write(bytes)
 }
 
 func (w *Writer) Close() error {
-	if len(w.partClosed) != 0 {
-		w.partClosed[len(w.partClosed)-1] = true
+	var err error
+	_, err = fmt.Fprintf(w.pw, "\r\n--%s--", w.boundary)
+	if err != nil {
+		return err
 	}
+	return w.pw.Close()
+}
 
-	_, err := fmt.Fprintf(w.w, "\r\n--%s--\r\n", w.boundary)
-	return err
+func (w *Writer) CloseWithError(err error) error {
+	return w.pw.CloseWithError(err)
+}
+
+func (w *Writer) Read(p []byte) (n int, err error) {
+	return w.pr.Read(p)
 }

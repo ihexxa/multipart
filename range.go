@@ -7,6 +7,25 @@ import (
 	"strings"
 )
 
+type Part struct {
+	contentType   string
+	rangeStart    string // it could be emtpy
+	rangeEnd      string // it could be emtpy
+	fileSize      string // it could be *
+	rangeStartInt int64  // set as -1 if it is empty
+	rangeEndInt   int64  // set as -1 if it is empty
+	fileSizeInt   int64  // set as -1 if it is *
+}
+
+func NewPart(contentType, rangeStart, rangeEnd, fileSize string) *Part {
+	return &Part{
+		contentType: contentType,
+		rangeStart:  rangeStart,
+		rangeEnd:    rangeEnd,
+		fileSize:    fileSize,
+	}
+}
+
 func RangeToParts(rangeValue string, respContentType, respFileSize string) ([]*Part, error) {
 	if rangeValue == "" {
 		return nil, nil // header not present

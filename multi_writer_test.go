@@ -2,20 +2,23 @@ package multipart
 
 import (
 	"bytes"
-	"io"
+	"fmt"
+	"io/ioutil"
 	"testing"
 )
 
 func TestWriter(t *testing.T) {
-	type Part struct {
+	type HttpRange struct {
 		contentType string
 		rangeStart  string
 		rangeEnd    string
 		fileSize    string
-		content     string
+		// content     string
 	}
 	type TestCase struct {
-		parts       []*Part
+		content     string
+		rangeHeader string
+		// parts       []*Part
 		expectedOut string
 	}
 
@@ -23,29 +26,37 @@ func TestWriter(t *testing.T) {
 	t.Run("normal cases", func(t *testing.T) {
 		testCases := []*TestCase{
 			&TestCase{
-				parts: []*Part{
-					&Part{"application/pdf", "500", "999", "8000", "...the first range..."},
-					&Part{"application/pdf", "7000", "7999", "8000", "...the second range"},
-				},
-				expectedOut: "Content-Type: multipart/byteranges; boundary=THIS_STRING_SEPARATES\r\n\r\n--THIS_STRING_SEPARATES\r\nContent-Type: application/pdf\r\nContent-Range: bytes 500-999/8000\r\n\r\n...the first range...\r\n--THIS_STRING_SEPARATES\r\nContent-Type: application/pdf\r\nContent-Range: bytes 7000-7999/8000\r\n\r\n...the second range\r\n--THIS_STRING_SEPARATES--\r\n",
+				content:     "0123456789",
+				rangeHeader: "bytes=0-3, 8-8",
+				expectedOut: "\r\n--THIS_STRING_SEPARATES\r\nContent-Type: application/octet-stream\r\nContent-Range: bytes 0-3/10\r\n\r\n0123\r\n--THIS_STRING_SEPARATES\r\nContent-Type: application/octet-stream\r\nContent-Range: bytes 8-8/10\r\n\r\n8\r\n--THIS_STRING_SEPARATES--",
 			},
 		}
 
 		for _, tc := range testCases {
-			buf := &bytes.Buffer{}
-			w, _ := NewWriterWithBoundary(buf, sep)
+			parts, err := RangeToParts(tc.rangeHeader, "application/octet-stream", fmt.Sprintf("%d", len(tc.content)))
+			if err != nil {
+				t.Fatal(err)
+			}
 
-			var err error
-			for _, part := range tc.parts {
-				err = w.CreatePart(part.contentType, part.rangeStart, part.rangeEnd, part.fileSize)
+			r := bytes.NewReader([]byte(tc.content))
+			w := NewWriterWithBoundary(r, parts, sep)
+			c := make(chan bool, 0)
+			go func() {
+				respBytes, err := ioutil.ReadAll(w)
 				if err != nil {
 					t.Fatal(err)
 				}
-
-				_, err = io.WriteString(w, part.content)
-				if err != nil {
-					t.Fatal(err)
+				if string(respBytes) != tc.expectedOut {
+					t.Error("\nnot equal 1.expected 2.got")
+					t.Error(tc.expectedOut)
+					t.Error(string(respBytes))
 				}
+				c <- true
+			}()
+
+			err = w.WriteMultiParts()
+			if err != nil {
+				t.Fatal(err)
 			}
 
 			err = w.Close()
@@ -53,11 +64,7 @@ func TestWriter(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if buf.String() != tc.expectedOut {
-				t.Error("\nnot equal 1.expected 2.got")
-				t.Error(tc.expectedOut)
-				t.Error(buf.String())
-			}
+			<-c
 		}
 	})
 }
