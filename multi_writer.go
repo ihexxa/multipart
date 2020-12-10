@@ -41,7 +41,9 @@ func (w *Writer) ContentLength() int64 {
 	fmt.Fprintf(&buf, "\r\n--%s--", w.boundary)
 	partsHeaderLen := int64(buf.Len())
 
-	return partsHeaderLen + partsBodyLen - 2 // minus the first /r/n before the first boundary
+	// the first CRLF is not part of message body
+	// ref: https://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html
+	return partsHeaderLen + partsBodyLen - 2
 }
 
 func (w *Writer) SetBoundary(boundary string) {
