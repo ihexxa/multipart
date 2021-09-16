@@ -1,16 +1,17 @@
 package multipart
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"strings"
 	"testing"
 )
 
-func TestWriteMultipartResponse(t *testing.T) {
+func TestMultipartReader(t *testing.T) {
 	fileName := "download.jpg"
 	ctype := "application/pdf"
-	boundary := "THIS_STRING_SEPARATES"
+	boundary := "BOUNDARY"
 
 	type testCase struct {
 		src       string
@@ -31,29 +32,29 @@ func TestWriteMultipartResponse(t *testing.T) {
 				fileSize: fmt.Sprintf("%d", len("10110")),
 				ranges:   "bytes=1-2, 3-3, -2, 2-",
 				expectOut: `HTTP/1.1 206 Partial Content
-Content-Type: multipart/byteranges; boundary=THIS_STRING_SEPARATES
+Content-Type: multipart/byteranges; boundary=BOUNDARY
 
---THIS_STRING_SEPARATES
+--BOUNDARY
 Content-Type: application/octet-stream
 Content-Range: bytes 1-2/5
 
 01
---THIS_STRING_SEPARATES
+--BOUNDARY
 Content-Type: application/octet-stream
 Content-Range: bytes 3-3/5
 
 1
---THIS_STRING_SEPARATES
+--BOUNDARY
 Content-Type: application/octet-stream
 Content-Range: bytes -2/5
 
 10
---THIS_STRING_SEPARATES
+--BOUNDARY
 Content-Type: application/octet-stream
 Content-Range: bytes 2-/5
 
 110
---THIS_STRING_SEPARATES--`,
+--BOUNDARY--`,
 			},
 			&testCase{
 				// unknown file size cases
@@ -63,36 +64,37 @@ Content-Range: bytes 2-/5
 				fileSize: "*",
 				ranges:   "bytes=0-1, 3-3",
 				expectOut: `HTTP/1.1 206 Partial Content
-Content-Type: multipart/byteranges; boundary=THIS_STRING_SEPARATES
+Content-Type: multipart/byteranges; boundary=BOUNDARY
 
---THIS_STRING_SEPARATES
+--BOUNDARY
 Content-Type: application/octet-stream
 Content-Range: bytes 0-1/*
 
 10
---THIS_STRING_SEPARATES
+--BOUNDARY
 Content-Type: application/octet-stream
 Content-Range: bytes 3-3/*
 
 1
---THIS_STRING_SEPARATES--`,
+--BOUNDARY--`,
 			},
 		}
 
 		for _, tc := range testCases {
-			reader := strings.NewReader(tc.src)
+			reader := NewMockReadSeekCloser(bytes.NewReader([]byte(tc.src)))
 			parts, err := RangeToParts(tc.ranges, ctype, tc.fileSize)
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			// pr, pw := io.Pipe()
-			w, contentLen, err := NewResponseWriterWithBoudary(reader, parts, boundary, true)
+			w, err := NewMultipartReaderWithBoudary(reader, parts, boundary)
 			if err != nil {
 				t.Fatal(err)
 			}
+			w.SetOutputHeaders(true)
 
-			go w.Write()
+			go w.Start()
 
 			// go WriteResponseWithBoundary(reader, pw, fileName, parts, boundary)
 			expectOut := strings.ReplaceAll(tc.expectOut, "\n", "\r\n")
@@ -112,16 +114,16 @@ Content-Range: bytes 3-3/*
 			headBody := strings.SplitN(body, "\r\n\r\n", 2)
 			expectHeadBody := strings.SplitN(expectOut, "\r\n\r\n", 2)
 
-			if contentLen != int64(len([]byte(expectHeadBody[1]))) {
-				t.Errorf("content length incorrect: expect(%d) got(%d)", len([]byte(expectHeadBody[1])), contentLen)
+			if w.ContentLength() != int64(len([]byte(expectHeadBody[1]))) {
+				t.Errorf("content length incorrect: expect(%d) got(%d)", len([]byte(expectHeadBody[1])), w.ContentLength())
 			}
-			if contentLen != int64(len([]byte(headBody[1]))) {
-				t.Errorf("content length & body length unmatch: cLen(%d) contentLen(%d)", contentLen, len([]byte(headBody[1])))
+			if w.ContentLength() != int64(len([]byte(headBody[1]))) {
+				t.Errorf("content length & body length unmatch: cLen(%d) w.ContentLength()(%d)", w.ContentLength(), len([]byte(headBody[1])))
 			}
 		}
 	})
 
-	t.Run("single parts", func(t *testing.T) {
+	t.Run("single part", func(t *testing.T) {
 		testCases := []*testCase{
 			&testCase{
 				// normal case, single byte, bytes from end, from specific byte to end
@@ -171,19 +173,20 @@ Content-Range: bytes 1-2/*
 		}
 
 		for _, tc := range testCases {
-			reader := strings.NewReader(tc.src)
+			reader := NewMockReadSeekCloser(bytes.NewReader([]byte(tc.src)))
 			parts, err := RangeToParts(tc.ranges, ctype, tc.fileSize)
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			// pr, pw := io.Pipe()
-			w, contentLen, err := NewResponseWriterWithBoudary(reader, parts, boundary, true)
+			w, err := NewMultipartReaderWithBoudary(reader, parts, boundary)
 			if err != nil {
 				t.Fatal(err)
 			}
+			w.SetOutputHeaders(true)
 
-			go w.Write()
+			go w.Start()
 
 			// go WriteResponseWithBoundary(reader, pw, fileName, parts, boundary)
 			expectOut := strings.ReplaceAll(tc.expectOut, "\n", "\r\n")
@@ -201,8 +204,8 @@ Content-Range: bytes 1-2/*
 			}
 
 			headBody := strings.Split(body, "\r\n\r\n")
-			if contentLen != int64(len([]byte(headBody[1]))) {
-				t.Errorf("content length incorrect: expect(%d) got(%d)", len([]byte(expectOut)), contentLen)
+			if w.ContentLength() != int64(len([]byte(headBody[1]))) {
+				t.Errorf("content length incorrect: expect(%d) got(%d)", len([]byte(expectOut)), w.ContentLength())
 			}
 		}
 	})
